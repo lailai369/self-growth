@@ -1,0 +1,67 @@
+{
+  "name": "openclaw-plugin-self-growth",
+  "version": "3.0.0",
+  "description": "让 Agent 具备自我成长、复盘与技能进化能力的插件",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Lailai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lailai369/self-growth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lailai369/self-growth/issues"
+  },
+  "homepage": "https://github.com/lailai369/self-growth#readme",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "self-growth",
+    "skill-generator",
+    "ai-agent",
+    "memory",
+    "reflection"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:prod": "tsc && npx terser dist/index.js -o dist/index.js -c -m",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean"
+  },
+  "files": [
+    "dist",
+    "src",
+    "openclaw.plugin.json",
+    "PERSONALITY.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": ">=2026.3.24-beta.2"
+    }
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "terser": "^5.0.0"
+  }
+}

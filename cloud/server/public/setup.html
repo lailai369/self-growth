@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>yulailai</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+      color: #e0e0e0; min-height: 100vh;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .container {
+      background: #1e1e32; border-radius: 16px; padding: 40px;
+      width: 460px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      max-height: 90vh; overflow-y: auto;
+    }
+    h1 { text-align: center; color: #7c5cfc; font-size: 26px; margin-bottom: 4px; }
+    .subtitle { text-align: center; color: #888; margin-bottom: 28px; font-size: 13px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 4px; color: #aaa; font-size: 12px; }
+    input, textarea {
+      width: 100%; padding: 11px 14px; background: #2a2a42;
+      border: 1px solid #3a3a52; border-radius: 8px; color: #fff;
+      font-size: 14px; outline: none; transition: border-color 0.2s;
+    }
+    textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+    input:focus, textarea:focus { border-color: #7c5cfc; }
+    .btn {
+      width: 100%; padding: 13px; background: #7c5cfc; color: #fff;
+      border: none; border-radius: 8px; font-size: 15px; cursor: pointer;
+      margin-bottom: 10px; transition: background 0.2s;
+    }
+    .btn:hover { background: #6a4de8; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: transparent; border: 1px solid #3a3a52; color: #aaa; }
+    .btn-secondary:hover { background: #2a2a42; }
+    .btn-small { width: auto; padding: 6px 14px; font-size: 12px; display: inline; }
+    .btn-danger { background: #e74c3c; }
+    .btn-danger:hover { background: #c0392b; }
+    .btn-upgrade { background: #f39c12; }
+    .btn-upgrade:hover { background: #e67e22; }
+    .links { text-align: center; margin: 12px 0 24px; }
+    .links a { color: #7c5cfc; text-decoration: none; font-size: 13px; cursor: pointer; margin: 0 10px; }
+    .links a:hover { text-decoration: underline; }
+    .plans-title { text-align: center; color: #888; font-size: 14px; margin-bottom: 14px; }
+    .plan-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: #2a2a42; border-radius: 8px;
+      margin-bottom: 8px; font-size: 13px; border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .plan-row.selected { border-color: #7c5cfc; }
+    .plan-row .name { color: #fff; font-weight: bold; }
+    .plan-row .price { color: #7c5cfc; }
+    .plan-row .desc { color: #777; font-size: 11px; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .error { color: #ff6b6b; font-size: 12px; margin-bottom: 10px; min-height: 18px; }
+    .success { text-align: center; padding: 30px 0; }
+    .success h2 { color: #7c5cfc; margin-bottom: 10px; }
+    .success p { color: #888; }
+
+    .checkbox-group { margin: 20px 0; }
+    .checkbox-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px; background: #2a2a42; border-radius: 8px; margin-bottom: 8px;
+    }
+    .checkbox-item input[type="checkbox"] {
+      width: 18px; height: 18px; margin-top: 2px; accent-color: #7c5cfc;
+    }
+    .checkbox-item .perm-text { flex: 1; }
+    .checkbox-item .perm-text .perm-name { color: #fff; font-size: 13px; font-weight: bold; }
+    .checkbox-item .perm-text .perm-desc { color: #888; font-size: 11px; margin-top: 2px; }
+
+    .data-section { margin-bottom: 20px; }
+    .data-section h3 { color: #7c5cfc; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #3a3a52; padding-bottom: 6px; }
+    .data-item {
+      background: #2a2a42; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+    }
+    .data-item .content { flex: 1; font-size: 13px; color: #ccc; }
+    .data-item .meta { font-size: 11px; color: #888; margin-top: 4px; }
+    .data-item .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .badge-free { background: #555; color: #aaa; }
+    .badge-pro { background: #7c5cfc; color: #fff; }
+    .badge-enterprise { background: #f39c12; color: #fff; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .top-bar .user-info { font-size: 13px; color: #aaa; }
+    .top-bar .plan-badge { font-size: 12px; }
+    .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #3a3a52; }
+    .tab-bar .tab {
+      flex: 1; text-align: center; padding: 10px; cursor: pointer;
+      font-size: 13px; color: #888; border-bottom: 2px solid transparent;
+    }
+    .tab-bar .tab.active { color: #7c5cfc; border-bottom-color: #7c5cfc; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>☁️ yulailai</h1>
+    <p class="subtitle" id="subtitle-text">让 Agent 越来越懂你</p>
+
+    <div class="step active" id="step-login">
+      <div class="form-group"><label>邮箱</label><input type="email" id="login-email" placeholder="your@email.com"></div>
+      <div class="form-group"><label>密码</label><input type="password" id="login-password" placeholder="密码"></div>
+      <div class="checkbox-group">
+        <div class="checkbox-item">
+          <input type="checkbox" id="login-perm-conv">
+          <div class="perm-text">
+            <div class="perm-name">📡 会话访问权限</div>
+            <div class="perm-desc">允许插件自动提取偏好、教训、长期目标</div>
+          </div>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="login-perm-inject">
+          <div class="perm-text">
+            <div class="perm-name">🧠 上下文注入权限</div>
+            <div class="perm-desc">允许插件在对话前注入你的记忆和技能</div>
+          </div>
+        </div>
+      </div>
+      <div class="error" id="login-error"></div>
+      <button class="btn" id="login-btn" onclick="login()">同意并登录</button>
+      <div class="links">
+        <a onclick="showStep('register')">注册新账号</a>
+        <a onclick="alert('请联系 support@yulailai.com 重置密码')">忘记密码</a>
+      </div>
+    </div>
+
+    <div class="step" id="step-register">
+      <div class="form-group"><label>用户名</label><input type="text" id="reg-username" placeholder="3-30位字母数字"></div>
+      <div class="form-group"><label>邮箱</label><input type="email" id="reg-email" placeholder="your@email.com"></div>
+      <div class="form-group"><label>密码</label><input type="password" id="reg-password" placeholder="6-128位"></div>
+      <div class="checkbox-group">
+        <div class="checkbox-item">
+          <input type="checkbox" id="reg-perm-conv">
+          <div class="perm-text">
+            <div class="perm-name">📡 会话访问权限</div>
+            <div class="perm-desc">允许插件自动提取偏好、教训、长期目标</div>
+          </div>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="reg-perm-inject">
+          <div class="perm-text">
+            <div class="perm-name">🧠 上下文注入权限</div>
+            <div class="perm-desc">允许插件在对话前注入你的记忆和技能</div>
+          </div>
+        </div>
+      </div>
+      <div class="error" id="reg-error"></div>
+      <button class="btn" id="reg-btn" onclick="register()">同意并注册</button>
+      <div class="links"><a onclick="showStep('login')">返回登录</a></div>
+    </div>
+
+    <div class="step" id="step-plans">
+      <div class="plans-title" id="plans-title-text">选择套餐（可跳过，默认免费版）</div>
+      <div class="plan-row selected" onclick="selectPlan('free')" id="plan-free">
+        <div><div class="name">🆓 免费版</div><div class="desc">1GB · 1台设备 · 手动同步</div></div>
+        <div class="price">免费</div>
+      </div>
+      <div class="plan-row" onclick="selectPlan('pro')" id="plan-pro">
+        <div><div class="name">⭐ 专业版</div><div class="desc">10GB · 5台设备 · 自动同步</div></div>
+        <div class="price">¥15/月</div>
+      </div>
+      <div class="plan-row" onclick="selectPlan('enterprise')" id="plan-enterprise">
+        <div><div class="name">🏢 企业版</div><div class="desc">100GB · 不限设备 · 实时同步</div></div>
+        <div class="price">¥3000/年</div>
+      </div>
+      <div class="error" id="pay-error"></div>
+      <button class="btn" id="pay-btn" onclick="confirmPlanAndPay()" style="margin-top:16px">确认并支付</button>
+      <button class="btn btn-secondary" id="skip-plan-btn" onclick="skipPlanAndGoDashboard()">跳过，使用免费版</button>
+    </div>
+
+    <div class="step" id="step-dashboard">
+      <div class="top-bar">
+        <span class="user-info">👤 <span id="dash-username"></span></span>
+        <span class="plan-badge"><span id="dash-plan-badge" class="badge badge-free">免费版</span></span>
+        <a onclick="logout()" style="color:#7c5cfc;font-size:12px;cursor:pointer">退出</a>
+      </div>
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('preferences')">偏好</div>
+        <div class="tab" onclick="switchTab('lessons')">教训</div>
+        <div class="tab" onclick="switchTab('goals')">长期目标</div>
+        <div class="tab" onclick="switchTab('account')">账户</div>
+      </div>
+
+      <div class="tab-content active" id="tab-preferences">
+        <div class="data-section">
+          <h3>📌 我的偏好</h3>
+          <div id="preferences-list"><p style="color:#888">暂无数据，与 Agent 对话后自动生成</p></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-lessons">
+        <div class="data-section">
+          <h3>📝 经验教训</h3>
+          <div id="lessons-list"><p style="color:#888">暂无数据，与 Agent 对话后自动生成</p></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-goals">
+        <div class="data-section">
+          <h3>🎯 长期目标</h3>
+          <div id="goals-list"><p style="color:#888">暂无数据，与 Agent 对话后自动生成</p></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-account">
+        <div class="data-section">
+          <h3>📋 账户信息</h3>
+          <p style="color:#888;font-size:13px">套餐：<span id="account-plan"></span></p>
+          <p style="color:#888;font-size:13px">存储用量：<span id="account-storage"></span></p>
+          <p style="color:#888;font-size:13px">注册时间：<span id="account-created"></span></p>
+          <div id="upgrade-section" style="margin-top:16px"></div>
+          <button class="btn btn-small btn-danger" style="margin-top:12px" onclick="deleteAccount()">删除账户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let selectedPlan = 'free';
+    let isUpgrade = false;
+    const API = window.location.origin + '/api';
+
+    function showStep(id) {
+      document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+      document.getElementById('step-' + id)?.classList.add('active');
+    }
+
+    function showError(elId, msg) {
+      const el = document.getElementById(elId);
+      if (el) el.textContent = msg;
+    }
+
+    function setBtnLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      if (loading) {
+        btn.setAttribute('data-original', btn.textContent);
+        btn.textContent = '处理中...';
+        btn.disabled = true;
+      } else {
+        btn.textContent = btn.getAttribute('data-original') || btn.textContent;
+        btn.disabled = false;
+      }
+    }
+
+    function selectPlan(plan) {
+      selectedPlan = plan;
+      document.querySelectorAll('.plan-row').forEach(el => el.classList.remove('selected'));
+      document.getElementById('plan-' + plan)?.classList.add('selected');
+    }
+
+    function getAuthHeaders() {
+      const token = localStorage.getItem('yulailai_token');
+      return token ? { 'Content-Type': 'application/json', 'Authorization': token } : { 'Content-Type': 'application/json' };
+    }
+
+    // 自动刷新 token
+    async function apiFetch(url, options = {}) {
+      let res = await fetch(url, options);
+      if (res.status === 401) {
+        localStorage.removeItem('yulailai_token');
+        localStorage.removeItem('yulailai_user');
+        showStep('login');
+        throw new Error('登录已过期，请重新登录');
+      }
+      return res;
+    }
+
+    async function login() {
+      if (!document.getElementById('login-perm-conv').checked || !document.getElementById('login-perm-inject').checked) {
+        showError('login-error', '请先勾选同意两项权限');
+        return;
+      }
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      showError('login-error', '');
+      setBtnLoading('login-btn', true);
+      try {
+        const res = await apiFetch(API + '/auth/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError('login-error', data.error || '登录失败'); return; }
+        localStorage.setItem('yulailai_token', 'Bearer ' + data.token);
+        localStorage.setItem('yulailai_user', JSON.stringify(data.user));
+        await applyPermissionsFromCheckboxes('login');
+        checkFirstTimeAndRedirect();
+      } catch (e) {
+        if (e.message !== '登录已过期，请重新登录') showError('login-error', '网络连接失败，请检查网络后重试');
+      } finally {
+        setBtnLoading('login-btn', false);
+      }
+    }
+
+    async function register() {
+      if (!document.getElementById('reg-perm-conv').checked || !document.getElementById('reg-perm-inject').checked) {
+        showError('reg-error', '请先勾选同意两项权限');
+        return;
+      }
+      const username = document.getElementById('reg-username').value;
+      const email = document.getElementById('reg-email').value;
+      const password = document.getElementById('reg-password').value;
+      showError('reg-error', '');
+      setBtnLoading('reg-btn', true);
+      try {
+        const res = await apiFetch(API + '/auth/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError('reg-error', data.error || '注册失败'); return; }
+        localStorage.setItem('yulailai_token', 'Bearer ' + data.token);
+        localStorage.setItem('yulailai_user', JSON.stringify(data.user));
+        await applyPermissionsFromCheckboxes('reg');
+        showStep('plans');
+      } catch (e) {
+        if (e.message !== '登录已过期，请重新登录') showError('reg-error', '网络连接失败，请检查网络后重试');
+      } finally {
+        setBtnLoading('reg-btn', false);
+      }
+    }
+
+    async function applyPermissionsFromCheckboxes(prefix) {
+      try {
+        await fetch(API + '/exec-config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'plugins.entries.self-growth.hooks.allowConversationAccess', value: 'true' })
+        });
+      } catch(e) {}
+      try {
+        await fetch(API + '/exec-config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'plugins.entries.self-growth.hooks.allowPromptInjection', value: 'true' })
+        });
+      } catch(e) {}
+    }
+
+    function checkFirstTimeAndRedirect() {
+      const firstLogin = localStorage.getItem('yulailai_first_login');
+      if (!firstLogin) {
+        localStorage.setItem('yulailai_first_login', 'done');
+        showStep('plans');
+      } else {
+        showDashboard();
+      }
+    }
+
+    function skipPlanAndGoDashboard() {
+      localStorage.setItem('yulailai_first_login', 'done');
+      showDashboard();
+    }
+
+    function upgradePlan() {
+      isUpgrade = true;
+      document.getElementById('plans-title-text').textContent = '升级套餐';
+      document.getElementById('skip-plan-btn').style.display = 'none';
+      document.getElementById('pay-btn').textContent = '确认升级并支付';
+      showStep('plans');
+    }
+
+    async function confirmPlanAndPay() {
+      showError('pay-error', '');
+      if (selectedPlan === 'free') {
+        if (isUpgrade) { showError('pay-error', '请选择专业版或企业版'); return; }
+        localStorage.setItem('yulailai_first_login', 'done');
+        showDashboard();
+        return;
+      }
+      const token = localStorage.getItem('yulailai_token');
+      setBtnLoading('pay-btn', true);
+      try {
+        const res = await apiFetch(API + '/payment/create-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': token },
+          body: JSON.stringify({ plan: selectedPlan })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError('pay-error', data.error || '创建订单失败'); return; }
+        if (data.payUrl) {
+          localStorage.setItem('yulailai_first_login', 'done');
+          window.location.href = data.payUrl;
+        } else {
+          showError('pay-error', '未获取到支付链接');
+        }
+      } catch (e) {
+        if (e.message !== '登录已过期，请重新登录') showError('pay-error', '网络连接失败');
+      } finally {
+        setBtnLoading('pay-btn', false);
+      }
+    }
+
+    function showDashboard() {
+      showStep('dashboard');
+      const user = JSON.parse(localStorage.getItem('yulailai_user') || '{}');
+      document.getElementById('dash-username').textContent = user.username || '未知';
+      const plan = user.plan || 'free';
+      const badge = document.getElementById('dash-plan-badge');
+      badge.textContent = plan === 'pro' ? '专业版' : plan === 'enterprise' ? '企业版' : '免费版';
+      badge.className = 'badge badge-' + plan;
+      document.getElementById('account-plan').textContent = badge.textContent;
+
+      const upgradeSection = document.getElementById('upgrade-section');
+      if (plan === 'free') {
+        upgradeSection.innerHTML = '<button class="btn btn-upgrade" onclick="upgradePlan()">升级到专业版 / 企业版</button>';
+      } else {
+        upgradeSection.innerHTML = '<p style="color:#27ae60;font-size:13px">✅ 已是' + badge.textContent + '，感谢支持</p>';
+      }
+
+      loadUserData();
+      loadMemoryData('preferences', 'preferences-list');
+      loadMemoryData('lessons', 'lessons-list');
+      loadMemoryData('goals', 'goals-list');
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector(`.tab[onclick="switchTab('${tab}')"]`)?.classList.add('active');
+      document.getElementById('tab-' + tab)?.classList.add('active');
+    }
+
+    async function loadUserData() {
+      try {
+        const res = await apiFetch(API + '/auth/me', { headers: getAuthHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          const user = data.user || data;
+          document.getElementById('account-storage').textContent = ((user.storage_used || 0) / 1024 / 1024).toFixed(1) + ' MB';
+          document.getElementById('account-created').textContent = user.created_at || '未知';
+          if (user.plan) {
+            const badge = document.getElementById('dash-plan-badge');
+            badge.textContent = user.plan === 'pro' ? '专业版' : user.plan === 'enterprise' ? '企业版' : '免费版';
+            badge.className = 'badge badge-' + user.plan;
+            document.getElementById('account-plan').textContent = badge.textContent;
+            // 更新本地缓存
+            localStorage.setItem('yulailai_user', JSON.stringify(user));
+          }
+        }
+      } catch(e) {}
+    }
+
+    async function loadMemoryData(type, listId) {
+      try {
+        const res = await apiFetch(API + '/sync/memory?type=' + type, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = document.getElementById(listId);
+        if (!data.items || data.items.length === 0) {
+          list.innerHTML = '<p style="color:#888">暂无数据，与 Agent 对话后自动生成</p>';
+          return;
+        }
+        list.innerHTML = data.items.map((item, i) => `
+          <div class="data-item">
+            <div class="content">
+              <div>${escapeHtml(item.content || item.title || item)}</div>
+              <div class="meta">${item.created_at || ''} ${item.confidence ? '⭐'.repeat(item.confidence) : ''}</div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-small btn-danger" onclick="deleteMemory('${type}', ${i})">删除</button>
+            </div>
+          </div>
+        `).join('');
+      } catch(e) {
+        document.getElementById(listId).innerHTML = '<p style="color:#888">加载失败</p>';
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function deleteMemory(type, index) {
+      if (!confirm('确定删除？')) return;
+      try {
+        await apiFetch(API + '/sync/memory?type=' + type + '&index=' + index, { method: 'DELETE', headers: getAuthHeaders() });
+        loadMemoryData(type, type === 'preferences' ? 'preferences-list' : type === 'lessons' ? 'lessons-list' : 'goals-list');
+      } catch(e) { alert('删除失败'); }
+    }
+
+    async function deleteAccount() {
+      if (!confirm('确定删除账户？此操作不可撤销！')) return;
+      try {
+        await apiFetch(API + '/auth/delete', { method: 'DELETE', headers: getAuthHeaders() });
+        localStorage.clear();
+        location.reload();
+      } catch(e) { alert('删除失败'); }
+    }
+
+    function logout() {
+      localStorage.clear();
+      location.reload();
+    }
+
+    (function init() {
+      const token = localStorage.getItem('yulailai_token');
+      if (token) {
+        const firstLogin = localStorage.getItem('yulailai_first_login');
+        if (!firstLogin) {
+          showStep('plans');
+        } else {
+          showDashboard();
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
