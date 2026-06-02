@@ -9,7 +9,7 @@
     "onStartup": true
   },
   "capability": {
-    "hooks": ["session_start", "before_prompt_build", "agent_end"]
+    "hooks": ["session_start", "before_prompt_build", "agent_end","before_compaction"]
   },
   "contracts": {
     "tools": [
@@ -19,13 +19,15 @@
     "hooks": [
       "session_start",
       "before_prompt_build",
-      "agent_end"
+      "agent_end",
+      "before_compaction"
     ]
   },
   "outputHooks": [
     "session_start",
     "before_prompt_build",
-    "agent_end"
+    "agent_end",
+    "before_compaction"
   ],
   "toolMetadata": {
     "daily_analyze_tool": {
