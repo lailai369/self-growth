@@ -17,7 +17,6 @@
 ```bash
 git clone https://github.com/lailai369/self-growth.git
 cd self-growth
-npm install
-npx tsc
 openclaw plugins install . --force
 openclaw gateway restart
+
