@@ -38,3 +38,4 @@ pnpm-debug.log*
 # ==========================================
 sync-and-watch.ps1
 sync-silent.vbs
+cloud/server/data/
