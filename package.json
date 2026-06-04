@@ -39,12 +39,10 @@
   },
   "files": [
     "dist",
-    "src",
     "openclaw.plugin.json",
     "PERSONALITY.md",
     "README.md",
-    "LICENSE",
-    "CHANGELOG.md"
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18.0.0"
