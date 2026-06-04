@@ -14,9 +14,6 @@
 
 ## 安装
 
-### 方式一：npm 安装（推荐）
-
 ```bash
-npm install -g openclaw-plugin-self-growth
-openclaw plugins install openclaw-plugin-self-growth
+openclaw plugins install openclaw-plugin-self-growth --force
 openclaw gateway restart
