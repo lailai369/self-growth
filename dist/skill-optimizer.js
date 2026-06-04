@@ -45,6 +45,28 @@ export class SkillOptimizer {
         }
         return generatedFiles;
     }
+    async batchGenerateFromLLM(tasks) {
+        const generatedFiles = [];
+        for (const task of tasks) {
+            try {
+                const taskRecord = {
+                    name: task.taskName,
+                    category: "自动生成",
+                    count: 1,
+                    steps: task.steps,
+                    history: [{ time: new Date().toISOString(), steps: task.steps }],
+                    readyForSkill: true,
+                    runIds: []
+                };
+                const filePath = await this.generateSkill(taskRecord);
+                generatedFiles.push(filePath);
+            }
+            catch (error) {
+                console.warn(`[SkillOptimizer] ⚠️ 跳过任务 [${task.taskName}]:`, error);
+            }
+        }
+        return generatedFiles;
+    }
     async listGenerated() {
         try {
             const entries = await fs.readdir(this.skillsDir, { withFileTypes: true });
@@ -69,9 +91,6 @@ export class SkillOptimizer {
             return null;
         }
     }
-    /**
-     * 记录技能执行，并更新使用次数和最后使用时间
-     */
     recordExecution(skillName, success, durationMs, hadManualFix = false) {
         if (!this.scores.has(skillName)) {
             this.scores.set(skillName, { recentScores: [], optimizeCount: 0, usageCount: 0, lastUsed: Date.now() });
@@ -96,13 +115,9 @@ export class SkillOptimizer {
         }
         return false;
     }
-    /**
-     * 🆕 综合评分：复用分 + 质量分 + 结构分
-     */
     async calculateComprehensiveScore(skillName) {
         const record = this.scores.get(skillName) || { recentScores: [], optimizeCount: 0, usageCount: 0, lastUsed: 0 };
         const content = await this.getExistingSkill(skillName);
-        // 复用分（40%）
         let reuse = 0;
         if (record.usageCount >= 10)
             reuse += 20;
@@ -117,7 +132,6 @@ export class SkillOptimizer {
             reuse += 5;
         if (daysSinceUsed < 1)
             reuse += 10;
-        // 质量分（40%）
         let quality = 0;
         const recentScores = record.recentScores.slice(-10);
         if (recentScores.length > 0) {
@@ -127,7 +141,6 @@ export class SkillOptimizer {
         else {
             quality = 20;
         }
-        // 结构分（20%）
         let structure = 0;
         if (content) {
             if (/## 🔄 核心工作流/.test(content))
@@ -139,16 +152,8 @@ export class SkillOptimizer {
             if (content.split('\n').filter(l => /^\d+\./.test(l.trim())).length >= 3)
                 structure += 5;
         }
-        return {
-            total: reuse + quality + structure,
-            reuse,
-            quality,
-            structure
-        };
+        return { total: reuse + quality + structure, reuse, quality, structure };
     }
-    /**
-     * 🆕 评估并清理：低分直接删，高分保持，中分+高频生成升级建议
-     */
     async evaluateAndCleanup() {
         const skillNames = await this.listGenerated();
         const suggestions = [];
@@ -156,7 +161,6 @@ export class SkillOptimizer {
         for (const skillName of skillNames) {
             const score = await this.calculateComprehensiveScore(skillName);
             const record = this.scores.get(skillName);
-            // < 50 分：直接删除
             if (score.total < 50) {
                 const skillDir = path.join(this.skillsDir, skillName);
                 try {
@@ -166,7 +170,6 @@ export class SkillOptimizer {
                 console.log(`[SkillOptimizer] 🗑️ 技能评分过低(${score.total}分)，已删除: ${skillName}`);
                 continue;
             }
-            // 50-79 且 watch 状态：直接删除
             if (score.total < 80) {
                 const content = await this.getExistingSkill(skillName);
                 if (content && this.parseStatus(content) === 'watch') {
@@ -179,7 +182,6 @@ export class SkillOptimizer {
                     continue;
                 }
             }
-            // 高频率使用（7天内≥3次）+ 中等评分（50-79）：生成升级建议
             const daysSinceUsed = (now - (record?.lastUsed || 0)) / 86400000;
             if (record && record.usageCount >= 3 && daysSinceUsed <= 7 && score.total >= 50 && score.total < 80) {
                 const suggestion = await this.generateUpgradeSuggestion(skillName, score.total);
@@ -187,7 +189,6 @@ export class SkillOptimizer {
                 console.log(`[SkillOptimizer] 💡 生成升级建议: ${skillName}（评分:${score.total} 使用:${record.usageCount}次）`);
             }
         }
-        // 写入 pending_upgrades.json
         if (suggestions.length > 0) {
             await fs.writeFile(this.pendingUpgradesPath, JSON.stringify(suggestions, null, 2), 'utf-8');
         }
@@ -199,9 +200,6 @@ export class SkillOptimizer {
         }
         return suggestions;
     }
-    /**
-     * 🆕 生成升级建议
-     */
     async generateUpgradeSuggestion(skillName, currentScore) {
         const content = await this.getExistingSkill(skillName);
         let suggestion = `建议优化"${skillName}"技能（当前评分${currentScore}），可考虑：简化冗余步骤、补充完成标准、添加不适用场景说明。`;
@@ -217,17 +215,8 @@ ${content.substring(0, 1500)}
             }
             catch { }
         }
-        return {
-            skillName,
-            currentScore,
-            suggestion,
-            generatedAt: new Date().toISOString(),
-            status: 'pending'
-        };
+        return { skillName, currentScore, suggestion, generatedAt: new Date().toISOString(), status: 'pending' };
     }
-    /**
-     * 🆕 读取待确认的升级建议
-     */
     async getPendingUpgrades() {
         try {
             const data = await fs.readFile(this.pendingUpgradesPath, 'utf-8');
@@ -237,9 +226,6 @@ ${content.substring(0, 1500)}
             return [];
         }
     }
-    /**
-     * 🆕 更新升级建议状态
-     */
     async updateUpgradeStatus(skillName, status) {
         const upgrades = await this.getPendingUpgrades();
         const updated = upgrades.filter(u => u.skillName !== skillName);
@@ -268,27 +254,12 @@ ${content.substring(0, 1500)}
         }
     }
     async detectChanges(skillName, recentLogs) {
-        const prompt = `分析以下对话日志，判断"${skillName}"技能的使用模式是否发生了变化。
-如果有变化，简要说明；如果没有，回复"无变化"。
-
-对话日志：
-${recentLogs.slice(0, 3000)}`;
+        const prompt = `分析以下对话日志，判断"${skillName}"技能的使用模式是否发生了变化。如果有变化，简要说明；如果没有，回复"无变化"。\n\n对话日志：\n${recentLogs.slice(0, 3000)}`;
         const response = await this.callLLM(prompt, 300);
         return response && response !== '无变化' ? response : null;
     }
     async diagnoseAndPatch(skillName, skillContent, recentLogs) {
-        const prompt = `分析以下日志，诊断"${skillName}"技能的缺陷：
-1. 哪些步骤经常失败？原因是什么？
-2. 用户在对话中如何进行手动修正？
-3. 提供精确的修改方案，只修改有问题的部分。
-
-旧版 SKILL.md：
-${skillContent.slice(0, 3000)}
-
-最近对话日志：
-${recentLogs.slice(0, 3000)}
-
-返回 JSON：{"problemsFound": true/false, "diagnosis": "...", "patchInstruction": "..."}`;
+        const prompt = `分析以下日志，诊断"${skillName}"技能的缺陷：\n1. 哪些步骤经常失败？原因是什么？\n2. 用户在对话中如何进行手动修正？\n3. 提供精确的修改方案，只修改有问题的部分。\n\n旧版 SKILL.md：\n${skillContent.slice(0, 3000)}\n\n最近对话日志：\n${recentLogs.slice(0, 3000)}\n\n返回 JSON：{"problemsFound": true/false, "diagnosis": "...", "patchInstruction": "..."}`;
         const response = await this.callLLM(prompt, 1000);
         try {
             return JSON.parse(response || '{}');
@@ -302,14 +273,7 @@ ${recentLogs.slice(0, 3000)}
             return false;
         try {
             const oldContent = await fs.readFile(skillPath, 'utf-8');
-            const prompt = `根据以下指令修改 SKILL.md 文件。保留 YAML frontmatter 不变，只修改 Markdown 正文。
-原始文件：
-${oldContent}
-
-修改指令：
-${patchInstruction}
-
-返回完整的、可直接保存的 SKILL.md 内容。`;
+            const prompt = `根据以下指令修改 SKILL.md 文件。保留 YAML frontmatter 不变，只修改 Markdown 正文。\n原始文件：\n${oldContent}\n\n修改指令：\n${patchInstruction}\n\n返回完整的、可直接保存的 SKILL.md 内容。`;
             let newContent = await this.callLLM(prompt, 3000);
             if (newContent && newContent.length > 200) {
                 const frontmatterEnd = oldContent.indexOf('---', 4);
@@ -335,28 +299,20 @@ ${patchInstruction}
         let optimizedCount = 0;
         for (const skillName of skillNames) {
             const avgScore = this.getAverageScore(skillName);
-            if (avgScore >= 80) {
-                console.log(`[SkillOptimizer] ✅ 技能 "${skillName}" 健康 (均分: ${avgScore})，跳过优化`);
+            if (avgScore >= 80)
                 continue;
-            }
-            console.log(`[SkillOptimizer] 🔧 技能 "${skillName}" 低分 (均分: ${avgScore})，开始诊断...`);
             const skillContent = await this.getExistingSkill(skillName);
-            if (!skillContent) {
-                console.log(`[SkillOptimizer] ⚠️ 技能 "${skillName}" 文件不存在，跳过`);
+            if (!skillContent)
                 continue;
-            }
             try {
                 const diagnosis = await this.diagnoseAndPatch(skillName, skillContent, recentLogs);
-                if (!diagnosis.problemsFound) {
-                    console.log(`[SkillOptimizer] ℹ️ 技能 "${skillName}" 未发现问题`);
+                if (!diagnosis.problemsFound)
                     continue;
-                }
                 const skillPath = path.join(this.skillsDir, skillName, 'SKILL.md');
                 const patched = await this.applyPatch(skillPath, diagnosis.patchInstruction);
                 if (patched) {
                     this.resetScores(skillName);
                     optimizedCount++;
-                    console.log(`[SkillOptimizer] 🎯 技能 "${skillName}" 优化完成`);
                 }
             }
             catch (err) {
@@ -412,8 +368,7 @@ ${stepsMarkdown}
         if (!steps || steps.length === 0)
             return [];
         let optimized = steps.map(step => step.trim()).filter(step => step.length > 0);
-        optimized = Array.from(new Set(optimized));
-        return optimized;
+        return Array.from(new Set(optimized));
     }
     async callLLM(prompt, maxTokens = 800) {
         try {

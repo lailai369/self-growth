@@ -14,7 +14,8 @@
   "contracts": {
     "tools": [
       "daily_analyze_tool",
-      "record_session_insight"
+      "record_session_insight",
+      "manage_interrupted_task"
     ],
     "hooks": [
       "session_start",
@@ -35,6 +36,9 @@
     },
     "record_session_insight": {
       "optional": true
+    },
+    "manage_interrupted_task": { 
+      "optional": true 
     }
   },
   "install": {

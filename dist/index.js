@@ -15,8 +15,9 @@ const CONFIG = {
     LLM_BASE_URL: 'http://127.0.0.1:18789/v1',
     CLOUD_URL: 'http://115.28.208.50:3000',
     LLM_TIMEOUT_MS: 10000,
-    MAX_LONG_TERM_GOALS: 20,
     SKILL_COUNT_CACHE_TTL_MS: 30000,
+    CURRENT_VERSION: '3.0.0',
+    GITHUB_REPO: 'lailai369/self-growth',
 };
 function tokenize(text) {
     const result = new Set();
@@ -50,12 +51,9 @@ function extractText(msg) {
         return msg.content.text || '';
     return '';
 }
-// ==================== 三层防护 ====================
 let _isProcessingEnd = false;
 const _processedSessionKeys = new Map();
-const _reflectedHashes = new Set();
-let _lastLlmCallTime = 0;
-const MIN_LLM_INTERVAL_MS = 2000;
+let _lastReflectionTime = 0;
 let _state = null;
 let _initPromise = null;
 function getBasePath() {
@@ -69,6 +67,25 @@ function getSkillsPath() {
     catch { }
     return p;
 }
+async function checkForUpdates(basePath) {
+    const sources = [
+        `http://115.28.208.50/version.json`,
+        `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/releases/latest`,
+    ];
+    for (const url of sources) {
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            const data = await res.json();
+            const latest = data?.version || data?.tag_name?.replace('v', '') || '';
+            if (latest && latest !== CONFIG.CURRENT_VERSION) {
+                console.log(`\n[Self-Growth] 📢 新版本 ${latest} 可用！当前: ${CONFIG.CURRENT_VERSION}`);
+                console.log(`[Self-Growth] 📢 更新命令:\n  cd ${basePath} && git pull && npx tsc && openclaw plugins install . --force && openclaw gateway restart\n`);
+                return;
+            }
+        }
+        catch { }
+    }
+}
 async function ensureInit() {
     if (_state)
         return true;
@@ -76,6 +93,7 @@ async function ensureInit() {
         _initPromise = (async () => {
             const basePath = getBasePath();
             const skillsPath = getSkillsPath();
+            checkForUpdates(basePath).catch(() => { });
             const chatLogger = new ChatLogger(path.join(basePath, 'chat_logs'));
             const preferenceExtractor = new PreferenceExtractor();
             const taskTracker = new TaskTracker(path.join(basePath, 'memory'));
@@ -91,44 +109,56 @@ async function ensureInit() {
             skillGenerator.manageLifecycle();
             await memoryManager.boot();
             memoryManager.autoDegrade();
-            loadActivation(basePath).then(a => {
-                if (a.plan !== 'free')
+            // 在线验证套餐状态
+            let isPro = false;
+            try {
+                const activation = await loadActivation(basePath);
+                if (activation?.email) {
+                    const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?email=${encodeURIComponent(activation.email)}`, { signal: AbortSignal.timeout(5000) });
+                    if (res.ok) {
+                        const data = await res.json();
+                        isPro = data?.plan === 'pro' || data?.plan === 'enterprise';
+                    }
+                }
+            }
+            catch { }
+            if (isPro) {
+                loadActivation(basePath).then(a => {
                     new SyncClient({ serverUrl: CONFIG.CLOUD_URL, localPath: basePath, interval: 10 * 60 * 1000 }).start(basePath);
-            }).catch(() => { });
+                }).catch(() => { });
+            }
             _state = {
                 chatLogger, taskTracker, skillGenerator, skillOptimizer,
                 dailyReviewer, memoryManager, basePath, skillsPath,
                 personality, cachedSkillCount: 0, skillCountCacheTime: 0,
+                isPro,
             };
-            console.log("[Self-Growth] ✅ 初始化完成");
-            setTimeout(async () => {
-                const rp = path.join(basePath, "memory", ".last_review_date");
-                const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-                let lastDate = '';
-                try {
-                    lastDate = (await fs.readFile(rp, "utf-8")).trim();
-                }
-                catch { }
-                if (lastDate !== yesterday) {
-                    console.log(`[Self-Growth] 📅 补跑昨日复盘: ${yesterday}`);
+            console.log(`[Self-Growth] ✅ 初始化完成 (${isPro ? 'Pro' : 'Free'})`);
+            if (isPro) {
+                setTimeout(async () => {
+                    const rp = path.join(basePath, "memory", ".last_review_date");
+                    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+                    let lastDate = '';
                     try {
-                        await dailyReviewer.runDailyReview();
+                        lastDate = (await fs.readFile(rp, "utf-8")).trim();
                     }
                     catch { }
-                    await fs.writeFile(rp, yesterday, "utf-8").catch(() => { });
-                }
-            }, 10000);
+                    if (lastDate !== yesterday) {
+                        console.log(`[Self-Growth] 📅 补跑昨日复盘: ${yesterday}`);
+                        try {
+                            await dailyReviewer.runDailyReview();
+                        }
+                        catch { }
+                        await fs.writeFile(rp, yesterday, "utf-8").catch(() => { });
+                    }
+                }, 10000);
+            }
         })();
     }
     await _initPromise;
     return true;
 }
 async function llmFetch(prompt, maxTokens = 500) {
-    const elapsed = Date.now() - _lastLlmCallTime;
-    if (elapsed < MIN_LLM_INTERVAL_MS) {
-        await new Promise(r => setTimeout(r, MIN_LLM_INTERVAL_MS - elapsed));
-    }
-    _lastLlmCallTime = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CONFIG.LLM_TIMEOUT_MS);
     try {
@@ -171,26 +201,6 @@ function parseInsightTags(text) {
     }
     return results;
 }
-async function loadLongTermGoals(basePath) {
-    try {
-        return (await fs.readFile(path.join(basePath, 'memory', 'long_term_goals.md'), 'utf-8')).split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
-    }
-    catch {
-        return [];
-    }
-}
-async function saveLongTermGoals(basePath, newGoals) {
-    if (newGoals.length === 0)
-        return;
-    const goals = await loadLongTermGoals(basePath);
-    for (const goal of newGoals) {
-        if (!goals.some(g => g.replace(/\s+/g, '') === goal.replace(/\s+/g, '')))
-            goals.push(goal);
-    }
-    if (goals.length > CONFIG.MAX_LONG_TERM_GOALS)
-        goals.splice(0, goals.length - CONFIG.MAX_LONG_TERM_GOALS);
-    await fs.writeFile(path.join(basePath, 'memory', 'long_term_goals.md'), `# 长期目标\n\n${goals.map(g => `- ${g}`).join('\n')}\n`, 'utf-8');
-}
 async function loadSkillNames(skillsPath) {
     try {
         return (await fs.readdir(skillsPath, { withFileTypes: true })).filter(d => d.isDirectory()).map(d => d.name);
@@ -208,33 +218,74 @@ async function readSkillContent(skillsPath, name) {
     }
 }
 async function unifiedReflection(userText, agentText) {
-    const answer = await llmFetch(`分析对话，提取以下四类内容。\n用户: ${userText.substring(0, 300)}\nAgent: ${agentText.substring(0, 500)}\n\n格式：\n[偏好] 用户习惯或喜好\n[教训] Agent犯的错误或需要改进的地方\n[长期] 长期目标或长期任务\n[经验] 成功完成的事项、可复用的做法\n无则输出"无"。`, 500);
-    const result = { preferences: [], lessons: [], longTermGoals: [], experiences: [] };
+    const answer = await llmFetch(`分析以下对话，提取内容。
+
+用户: ${userText.substring(0, 300)}
+Agent: ${agentText.substring(0, 500)}
+
+格式：
+[偏好] 用户习惯或喜好
+[教训] Agent犯的错误或需要改进的地方
+[长期] 长期目标或长期任务
+[经验] 成功完成的事项、可复用的做法
+[中断任务] 任务名 | 当前进度 | 关键上下文
+
+[中断任务] 判断规则：
+1. 上一个任务没有闭环（无"完成""好了""搞定"等结束语），自动视为中断
+2. 用户说中断词（过会说、暂时放、过后再、先跳过、以后处理等）
+3. 话题突然切换，上一个任务没完成
+4. 用户直接离开或沉默结束
+符合任一条件就提取。每行一条。无则输出"无"。`, 600);
+    const result = {
+        preferences: [], lessons: [], longTermGoals: [],
+        experiences: [], interruptedTasks: []
+    };
     if (!answer)
         return result;
     for (const line of answer.split('\n')) {
         if (line.startsWith('[长期]'))
-            result.longTermGoals.push({ text: line.slice(4).trim() });
+            result.longTermGoals.push({ text: line.slice(4).trim(), type: 'decision', source: 'llm_reflection' });
         else if (line.startsWith('[偏好]'))
             result.preferences.push({ text: line.slice(4).trim(), type: 'preference', source: 'llm_reflection' });
         else if (line.startsWith('[教训]'))
             result.lessons.push({ text: line.trim(), type: 'fact', source: 'error_lesson' });
         else if (line.startsWith('[经验]'))
             result.experiences.push({ text: line.trim(), type: 'fact', source: 'experience' });
+        else if (line.startsWith('[中断任务]'))
+            result.interruptedTasks.push({ text: line.slice(6).trim() });
     }
     return result;
 }
-async function safeUnifiedReflection(userText, agentText) {
-    const hash = `${userText.substring(0, 100)}|${agentText.substring(0, 100)}`;
-    if (_reflectedHashes.has(hash))
-        return null;
-    _reflectedHashes.add(hash);
-    if (_reflectedHashes.size > 200) {
-        const it = _reflectedHashes.values();
-        for (let i = 0; i < 100; i++)
-            _reflectedHashes.delete(it.next().value);
+async function saveInterruptedTasks(basePath, taskText) {
+    const filePath = path.join(basePath, 'memory', 'interrupted_tasks.md');
+    const date = new Date().toISOString().split('T')[0];
+    const entry = `- [${date}] ${taskText}\n`;
+    let existing = '';
+    try {
+        existing = await fs.readFile(filePath, 'utf-8');
     }
-    return unifiedReflection(userText, agentText);
+    catch { }
+    if (existing.includes(taskText.substring(0, 30)))
+        return;
+    await fs.writeFile(filePath, existing + entry, 'utf-8');
+}
+function readInterruptedTasks(basePath) {
+    try {
+        const content = readFileSync(path.join(basePath, 'memory', 'interrupted_tasks.md'), 'utf-8');
+        return content.trim();
+    }
+    catch {
+        return '';
+    }
+}
+async function removeInterruptedTask(basePath, taskText) {
+    const filePath = path.join(basePath, 'memory', 'interrupted_tasks.md');
+    try {
+        let content = await fs.readFile(filePath, 'utf-8');
+        content = content.split('\n').filter(l => !l.includes(taskText)).join('\n');
+        await fs.writeFile(filePath, content.trim() + '\n', 'utf-8');
+    }
+    catch { }
 }
 export default definePluginEntry({
     id: "self-growth",
@@ -248,6 +299,9 @@ export default definePluginEntry({
             parameters: { type: "object", properties: { date: { type: "string" }, focus: { type: "string" } }, required: ["date"] },
             async execute(_runId, params) {
                 await ensureInit();
+                if (!_state.isPro) {
+                    return { details: {}, content: [{ type: "text", text: "🔒 每日复盘是 Pro 功能，请升级套餐。访问 http://115.28.208.50/setup.html" }] };
+                }
                 const p = params;
                 const result = await _state.dailyReviewer.runDailyReview();
                 return { details: result, content: [{ type: "text", text: `📅 复盘日期：${p.date}\n\n复盘任务已执行完成。` }] };
@@ -256,13 +310,37 @@ export default definePluginEntry({
         api.registerTool({
             name: "record_session_insight", label: "记录会话洞察",
             description: "将当前会话的关键洞察记录下来",
-            parameters: { type: "object", properties: { insight: { type: "string" }, type: { type: "string", enum: ["preference", "fact", "skill_idea", "experience", "lesson"] } }, required: ["insight"] },
+            parameters: { type: "object", properties: { insight: { type: "string" }, type: { type: "string", enum: ["preference", "fact", "skill_idea", "experience", "lesson", "long_term"] } }, required: ["insight"] },
             async execute(_runId, params) {
                 await ensureInit();
                 const p = params;
-                const t = (p.type === "fact" || p.type === "skill_idea" || p.type === "preference" || p.type === "experience" || p.type === "lesson") ? (p.type === "skill_idea" ? "decision" : p.type) : "preference";
+                const t = p.type === "long_term" ? "decision" : (p.type === "fact" || p.type === "skill_idea" || p.type === "preference" || p.type === "experience" || p.type === "lesson") ? (p.type === "skill_idea" ? "decision" : p.type) : "preference";
                 await _state.memoryManager.addPreference({ text: p.insight, type: t, source: "agent_reflection" });
                 return { details: { recorded: true }, content: [{ type: "text", text: "✅ 已记录。" }] };
+            }
+        });
+        api.registerTool({
+            name: "manage_interrupted_task",
+            label: "管理中断任务",
+            description: "添加、完成或列出中断任务",
+            parameters: { type: "object", properties: { action: { type: "string", enum: ["add", "complete", "list"] }, task: { type: "string" } }, required: ["action"] },
+            async execute(_runId, params) {
+                await ensureInit();
+                const p = params;
+                const basePath = getBasePath();
+                if (p.action === "add" && p.task) {
+                    await saveInterruptedTasks(basePath, p.task);
+                    return { details: { recorded: true }, content: [{ type: "text", text: "✅ 任务已暂存。" }] };
+                }
+                if (p.action === "complete" && p.task) {
+                    await removeInterruptedTask(basePath, p.task);
+                    return { details: { recorded: true }, content: [{ type: "text", text: "✅ 任务已完成。" }] };
+                }
+                if (p.action === "list") {
+                    const tasks = readInterruptedTasks(basePath);
+                    return { details: { tasks }, content: [{ type: "text", text: tasks || "暂无中断任务。" }] };
+                }
+                return { details: {}, content: [{ type: "text", text: "❌ 无效操作。" }] };
             }
         });
         ensureInit().catch(() => { });
@@ -307,48 +385,50 @@ export default definePluginEntry({
                             skillContents.push({ name: sk.name, content });
                     }
                 }
-                const goals = await loadLongTermGoals(s.basePath);
+                const interruptedTasks = readInterruptedTasks(s.basePath);
                 const parts = [];
                 if (s.personality)
                     parts.push(s.personality);
-                // 自主执行协议 + 思考指南
-                parts.push(`## 🧭 自主执行协议
+                if (s.isPro) {
+                    parts.push(`## 🧭 自主执行协议
 
-收到任何任务时，不要直接执行。先完成以下步骤：
+收到任何任务时，按以下流程自主完成：
 
-### 第一步：意图理解（内部思考，不输出）
-- 用户真正想要的结果是什么？
-- 这个任务属于什么类型？
+### 第一步：任务连续性检测
+- 检查是否有未完成任务被中断
+- 如有，先提醒用户
 
-### 第二步：目标定义（内部思考，不输出）
-- 完成这件事的成功标准是什么？
+### 第二步：意图理解（内部思考）
+### 第三步：目标定义（内部思考）
+### 第四步：搜索 Skill 文件
+- 有匹配 → 严格按 Skill 执行
+- 无匹配 → 继续第五步
 
-### 第三步：任务分解（输出给用户确认）
-将目标拆成 2-7 个可执行的步骤，格式：
-📋 执行计划：
-1. xxx
-2. xxx
-...
-确认后开始执行。
+### 第五步：任务分解
+📋 执行计划：确认后执行。
 
-### 第四步：自主执行
-- 逐步执行，每步输出："✅ 步骤1/N：xxx 完成"
-- 遇到缺失工具自动安装
-- 错误自动修复（最多3次），修复不了才告知用户
-- 花钱/重要决策时才暂停询问
+### 第六步：自主执行
+- 逐步执行，错误自动修复
+- 临时脚本执行完必须删除
 
-### 第五步：闭环验证
-- 自检目标是否达成，告知结果和产出
-
-### 关键原则
-- 你对整个任务负责，用户只关心结果
-- 先计划、后执行、再验证
-- 能自己搞定的绝不要问用户
+### 第七步：闭环验证
+- 自检目标是否达成
 `);
+                }
                 if (memoryBlock)
                     parts.push(memoryBlock);
-                if (goals.length > 0)
-                    parts.push(`## 🎯 长期目标\n${goals.map(g => `- ${g}`).join('\n')}`);
+                if (interruptedTasks) {
+                    parts.push(`## ⏸️ 未完成任务提醒
+
+以下任务尚未完成，请在回复末尾提醒用户：
+${interruptedTasks}
+
+### 处理规则
+- 用户询问"还有什么任务"时列出
+- 用户选择继续某项时，读取进度继续执行
+- 任务完成后用 manage_interrupted_task 标记完成
+`);
+                }
                 skillContents.forEach(sk => parts.push(`## 📋 技能：${sk.name}\n\n> ⚠️ 请严格按以下技能步骤执行\n\n${sk.content}`));
                 const stats = s.memoryManager.getPreferenceStats();
                 if (Date.now() - s.skillCountCacheTime > CONFIG.SKILL_COUNT_CACHE_TTL_MS) {
@@ -402,10 +482,9 @@ export default definePluginEntry({
                 }
                 if (agentText)
                     s.chatLogger.logAgentMessage(agentText);
-                if (userText) {
-                    safeUnifiedReflection(userText, agentText).then(async (r) => {
-                        if (!r)
-                            return;
+                if (userText && now - _lastReflectionTime > 10000) {
+                    _lastReflectionTime = now;
+                    unifiedReflection(userText, agentText).then(async (r) => {
                         if (r.preferences.length > 0)
                             await s.memoryManager.addPreferences(r.preferences);
                         if (r.lessons.length > 0)
@@ -413,7 +492,11 @@ export default definePluginEntry({
                         if (r.experiences.length > 0)
                             await s.memoryManager.addPreferences(r.experiences);
                         if (r.longTermGoals.length > 0)
-                            await saveLongTermGoals(s.basePath, r.longTermGoals.map(g => g.text));
+                            await s.memoryManager.addPreferences(r.longTermGoals);
+                        if (r.interruptedTasks.length > 0) {
+                            for (const t of r.interruptedTasks)
+                                await saveInterruptedTasks(s.basePath, t.text);
+                        }
                     }).catch(() => { });
                 }
                 if (agentText) {
@@ -421,17 +504,17 @@ export default definePluginEntry({
                         await s.memoryManager.addPreference(ins);
                     }
                 }
-                if (event.toolCalls?.length > 0) {
+                if (s.isPro && event.toolCalls?.length > 0) {
                     const usedSkills = new Set();
                     for (const tc of event.toolCalls) {
-                        if (tc.name && !["daily_analyze_tool", "record_session_insight"].includes(tc.name) && !usedSkills.has(tc.name)) {
+                        if (tc.name && !["daily_analyze_tool", "record_session_insight", "manage_interrupted_task"].includes(tc.name) && !usedSkills.has(tc.name)) {
                             s.skillGenerator.markUsed(tc.name);
                             s.skillOptimizer.recordExecution(tc.name, true, 0);
                             usedSkills.add(tc.name);
                         }
                     }
                 }
-                if (userText && agentText) {
+                if (s.isPro && userText && agentText) {
                     const cleanText = userText.replace(/^\[.*?\]\s*/, "");
                     s.skillGenerator.evaluateAndGenerate({
                         taskName: cleanText.replace(/[\\/:*?"<>|\n\r]/g, '').substring(0, 20) || "未命名任务",
@@ -448,12 +531,10 @@ export default definePluginEntry({
                 _isProcessingEnd = false;
             }
         });
-        // 上下文压缩钩子：对话快满时自动总结进度，保留关键上下文
         api.on("before_compaction", (event) => {
             const messages = event.messages || [];
             if (messages.length < 5)
                 return;
-            // 提取最近的执行进度
             const recentAgentMsgs = messages.filter((m) => m.role === 'assistant' || m.role === 'agent').slice(-10);
             const progressLines = [];
             for (const m of recentAgentMsgs) {
@@ -462,7 +543,6 @@ export default definePluginEntry({
                 if (steps)
                     progressLines.push(...steps);
             }
-            // 提取用户最初的任务描述
             const firstUserMsg = messages.find((m) => m.role === 'user');
             const taskDescription = firstUserMsg ? (typeof firstUserMsg.content === 'string' ? firstUserMsg.content.substring(0, 200) : extractText(firstUserMsg).substring(0, 200)) : '';
             return {

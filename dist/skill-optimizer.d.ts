@@ -32,36 +32,23 @@ export declare class SkillOptimizer {
     init(): Promise<void>;
     generateSkill(taskRecord: TaskRecord): Promise<string>;
     batchGenerate(readyTasks: TaskRecord[]): Promise<string[]>;
+    batchGenerateFromLLM(tasks: Array<{
+        taskName: string;
+        steps: string[];
+        reason: string;
+    }>): Promise<string[]>;
     listGenerated(): Promise<string[]>;
     getExistingSkill(skillName: string): Promise<string | null>;
-    /**
-     * 记录技能执行，并更新使用次数和最后使用时间
-     */
     recordExecution(skillName: string, success: boolean, durationMs: number, hadManualFix?: boolean): boolean;
-    /**
-     * 🆕 综合评分：复用分 + 质量分 + 结构分
-     */
     calculateComprehensiveScore(skillName: string): Promise<{
         total: number;
         reuse: number;
         quality: number;
         structure: number;
     }>;
-    /**
-     * 🆕 评估并清理：低分直接删，高分保持，中分+高频生成升级建议
-     */
     evaluateAndCleanup(): Promise<UpgradeSuggestion[]>;
-    /**
-     * 🆕 生成升级建议
-     */
     private generateUpgradeSuggestion;
-    /**
-     * 🆕 读取待确认的升级建议
-     */
     getPendingUpgrades(): Promise<UpgradeSuggestion[]>;
-    /**
-     * 🆕 更新升级建议状态
-     */
     updateUpgradeStatus(skillName: string, status: 'approved' | 'rejected'): Promise<void>;
     getAverageScore(skillName: string): number;
     resetScores(skillName: string): void;

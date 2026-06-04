@@ -45,6 +45,7 @@ export class DailyReviewer {
         catch (error) {
             console.error('[DailyReviewer] ⚠️ 快照失败，但继续复盘流程:', error);
         }
+        // 阶段一：文字复盘
         try {
             console.log('[DailyReviewer] 📝 阶段一：文字复盘...');
             if (recentLogs && recentLogs !== '暂无最近聊天记录') {
@@ -63,6 +64,7 @@ export class DailyReviewer {
             console.error('[DailyReviewer] ❌ 阶段一失败，继续阶段二:', error);
             report.summary = '文字复盘暂时不可用';
         }
+        // 阶段二：偏好提取
         try {
             console.log('[DailyReviewer] 🧠 阶段二：偏好提取...');
             const logsForExtract = recentLogs || await this.chatLogger.scanRecent(1);
@@ -76,20 +78,47 @@ export class DailyReviewer {
         catch (error) {
             console.error('[DailyReviewer] ❌ 阶段二失败，继续阶段三:', error);
         }
+        // 阶段三：技能生成（LLM 判断）
         try {
             console.log('[DailyReviewer] 🛠️ 阶段三：技能生成...');
-            const candidates = readyTasksSnapshot.length > 0 ? readyTasksSnapshot : this.taskTracker.getReadyTasks();
-            if (candidates.length > 0) {
-                console.log(`[DailyReviewer] 发现 ${candidates.length} 个可生成的新技能`);
-                report.skillsGenerated = await this.skillOptimizer.batchGenerate(candidates);
-            }
-            else {
-                console.log('[DailyReviewer] 今日没有需要生成的新技能');
+            const logsForSkill = recentLogs || await this.chatLogger.scanRecent(1);
+            if (logsForSkill && logsForSkill !== '暂无最近聊天记录') {
+                const prompt = `分析以下对话日志，判断是否有任务值得生成 Skill 文件。
+
+判断标准：
+1. 流程复杂度：是否需要3步以上？步骤间是否有依赖？
+2. 复用频率：历史上是否出现过多次？
+3. 标准化程度：每次执行流程是否基本相同？
+4. 错误成本：做错了后果严重吗？
+
+对话日志：
+${logsForSkill.slice(0, 4000)}
+
+返回 JSON：[{"taskName":"任务名","score":4,"reason":"流程复杂且重复多次","steps":["步骤1","步骤2"]}]
+评分≥3才需要生成。如果没有，返回 []。只返回 JSON：`;
+                const answer = await this.callLLM(prompt, 500);
+                if (answer) {
+                    try {
+                        const parsed = JSON.parse((answer || '[]').match(/\[[\s\S]*\]/)?.[0] || '[]');
+                        const toGenerate = (parsed || []).filter((s) => s.score >= 3);
+                        if (toGenerate.length > 0) {
+                            console.log(`[DailyReviewer] 发现 ${toGenerate.length} 个可生成的新技能`);
+                            report.skillsGenerated = await this.skillOptimizer.batchGenerateFromLLM(toGenerate);
+                        }
+                        else {
+                            console.log('[DailyReviewer] 今日没有需要生成的新技能');
+                        }
+                    }
+                    catch {
+                        console.log('[DailyReviewer] 技能生成评估失败，跳过');
+                    }
+                }
             }
         }
         catch (error) {
             console.error('[DailyReviewer] ❌ 阶段三失败:', error);
         }
+        // 阶段四：技能自动优化
         try {
             console.log('[DailyReviewer] 🔧 阶段四：技能自动优化...');
             const logsForOptimize = recentLogs || await this.chatLogger.scanRecent(7);
@@ -102,6 +131,7 @@ export class DailyReviewer {
         catch (error) {
             console.error('[DailyReviewer] ❌ 阶段四失败:', error);
         }
+        // 阶段四点五：记忆编译
         try {
             console.log('[DailyReviewer] 🗂️ 阶段四点五：记忆编译...');
             await this.compileMemories(recentLogs);
@@ -109,6 +139,7 @@ export class DailyReviewer {
         catch (error) {
             console.error('[DailyReviewer] ❌ 阶段四点五失败:', error);
         }
+        // 阶段五：插件自我反思
         try {
             console.log('[DailyReviewer] 💭 阶段五：插件自我反思...');
             const logsForReflection = recentLogs || await this.chatLogger.scanRecent(7);
