@@ -17,6 +17,7 @@ export async function loadActivation(basePath) {
             activatedAt: null,
             expiresAt: null,
             deviceId: generateDeviceId(),
+            email: null,
         };
     }
 }
@@ -40,6 +41,7 @@ export async function activateLicense(basePath, license, serverUrl) {
         activatedAt: new Date().toISOString(),
         expiresAt: data.expiresAt,
         deviceId: generateDeviceId(),
+        email: data.email || null,
     };
     await saveActivation(basePath, state);
     return state;

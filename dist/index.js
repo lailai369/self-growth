@@ -113,8 +113,9 @@ async function ensureInit() {
             let isPro = false;
             try {
                 const activation = await loadActivation(basePath);
-                if (activation?.email) {
-                    const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?email=${encodeURIComponent(activation.email)}`, { signal: AbortSignal.timeout(5000) });
+                const email = activation?.email;
+                if (email) {
+                    const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(5000) });
                     if (res.ok) {
                         const data = await res.json();
                         isPro = data?.plan === 'pro' || data?.plan === 'enterprise';
@@ -435,7 +436,7 @@ ${interruptedTasks}
                     s.cachedSkillCount = s.skillGenerator.listGenerated().length;
                     s.skillCountCacheTime = Date.now();
                 }
-                parts.push(`> ⚠️ 禁止读取 MEMORY.md`, `> 📂 对话记忆: ${s.basePath}/chat_logs/`, `> 📊 ${stats.total} 条偏好 | ${s.cachedSkillCount} 个技能`, `> ⚠️ 技能库路径: ${s.skillsPath}`, `> 🌐 首次使用请访问: ${CONFIG.CLOUD_URL.replace(':3000', '')}/setup.html 完成注册`);
+                parts.push(`> ⚠️ 禁止读取 MEMORY.md`, `> 📂 对话记忆: ${s.basePath}/chat_logs/`, `> 📊 ${stats.total} 条偏好 | ${s.cachedSkillCount} 个技能`, `> ⚠️ 技能库路径: ${s.skillsPath}`, `> 🌐 管理账户/升级套餐: ${CONFIG.CLOUD_URL.replace(':3000', '')}/setup.html`);
                 return { systemPrompt: parts.join("\n") };
             }
             catch {

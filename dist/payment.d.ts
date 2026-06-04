@@ -5,6 +5,7 @@ export interface ActivationState {
     activatedAt: string | null;
     expiresAt: string | null;
     deviceId: string;
+    email: string | null;
 }
 export declare function getActivationPath(basePath: string): string;
 export declare function loadActivation(basePath: string): Promise<ActivationState>;
