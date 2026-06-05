@@ -8,10 +8,14 @@ skills/
 payment.json
 
 # ==========================================
-# 2. 依赖与编译产物（由用户本地生成）
+# 2. 源码与编译产物（闭源发布，只提交 dist）
 # ==========================================
-node_modules/
+src/
+cloud/
+tsconfig.json
 *.tsbuildinfo
+*.backup1.*
+node_modules/
 
 # ==========================================
 # 3. 操作系统与编辑器生成的垃圾文件
@@ -39,3 +43,4 @@ pnpm-debug.log*
 sync-and-watch.ps1
 sync-silent.vbs
 cloud/server/data/
+USAGE-EXAMPLES.md
