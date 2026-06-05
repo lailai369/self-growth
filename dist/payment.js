@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-const ACTIVATION_FILE = 'activation.json';
+const ACTIVATION_FILE = 'payment.json';
 export function getActivationPath(basePath) {
     return path.join(basePath, ACTIVATION_FILE);
 }

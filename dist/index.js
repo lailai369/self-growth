@@ -86,6 +86,25 @@ async function checkForUpdates(basePath) {
         catch { }
     }
 }
+async function syncMemoryFromCloud(basePath, email) {
+    try {
+        const res = await fetch(`${CONFIG.CLOUD_URL}/api/sync/memory?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok)
+            return;
+        const data = await res.json();
+        const compiledDir = path.join(basePath, 'memory', 'compiled');
+        await fs.mkdir(compiledDir, { recursive: true });
+        if (data?.memory)
+            await fs.writeFile(path.join(compiledDir, 'memory.md'), data.memory, 'utf-8');
+        if (data?.preferences)
+            await fs.writeFile(path.join(compiledDir, 'preferences.md'), data.preferences, 'utf-8');
+        if (data?.lessons)
+            await fs.writeFile(path.join(compiledDir, 'lessons.md'), data.lessons, 'utf-8');
+        if (data?.longTermGoals)
+            await fs.writeFile(path.join(basePath, 'memory', 'long_term_goals.md'), data.longTermGoals, 'utf-8');
+    }
+    catch { }
+}
 async function ensureInit() {
     if (_state)
         return true;
@@ -109,24 +128,60 @@ async function ensureInit() {
             skillGenerator.manageLifecycle();
             await memoryManager.boot();
             memoryManager.autoDegrade();
-            // 在线验证套餐状态
             let isPro = false;
+            let email = '';
+            let expiresAt = '';
             try {
                 const activation = await loadActivation(basePath);
-                const email = activation?.email;
+                email = activation?.email || '';
                 if (email) {
                     const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(5000) });
                     if (res.ok) {
                         const data = await res.json();
                         isPro = data?.plan === 'pro' || data?.plan === 'enterprise';
+                        expiresAt = data?.expiresAt || '';
                     }
+                    await syncMemoryFromCloud(basePath, email);
                 }
             }
             catch { }
+            if (!email) {
+                console.log("\n╔══════════════════════════════════════╗");
+                console.log("║  🌐 首次使用请注册/登录：          ║");
+                console.log("║  http://115.28.208.50/setup.html    ║");
+                console.log("╚══════════════════════════════════════╝\n");
+                try {
+                    require('child_process').exec('start http://115.28.208.50/setup.html');
+                }
+                catch { }
+            }
+            if (isPro && expiresAt) {
+                const expDate = new Date(expiresAt);
+                const daysLeft = Math.ceil((expDate.getTime() - Date.now()) / 86400000);
+                if (daysLeft <= 7 && daysLeft > 0) {
+                    console.log(`\n╔══════════════════════════════════════╗`);
+                    console.log(`║  ⚠️  Pro 套餐还剩 ${daysLeft} 天到期！       ║`);
+                    console.log(`║  🌐 续费链接：                      ║`);
+                    console.log(`║  http://115.28.208.50/setup.html    ║`);
+                    console.log(`╚══════════════════════════════════════╝\n`);
+                    try {
+                        require('child_process').exec('start http://115.28.208.50/setup.html');
+                    }
+                    catch { }
+                }
+                if (daysLeft <= 0) {
+                    console.log(`\n[Self-Growth] ⚠️ Pro 套餐已过期，降级为 Free\n`);
+                    isPro = false;
+                }
+            }
             if (isPro) {
-                loadActivation(basePath).then(a => {
+                try {
                     new SyncClient({ serverUrl: CONFIG.CLOUD_URL, localPath: basePath, interval: 10 * 60 * 1000 }).start(basePath);
-                }).catch(() => { });
+                    console.log("[Self-Growth] SyncClient 已启动");
+                }
+                catch (e) {
+                    console.log("[Self-Growth] SyncClient 启动失败:", e?.message);
+                }
             }
             _state = {
                 chatLogger, taskTracker, skillGenerator, skillOptimizer,
@@ -272,8 +327,7 @@ async function saveInterruptedTasks(basePath, taskText) {
 }
 function readInterruptedTasks(basePath) {
     try {
-        const content = readFileSync(path.join(basePath, 'memory', 'interrupted_tasks.md'), 'utf-8');
-        return content.trim();
+        return readFileSync(path.join(basePath, 'memory', 'interrupted_tasks.md'), 'utf-8').trim();
     }
     catch {
         return '';
@@ -396,22 +450,16 @@ export default definePluginEntry({
 收到任何任务时，按以下流程自主完成：
 
 ### 第一步：任务连续性检测
-- 检查是否有未完成任务被中断
-- 如有，先提醒用户
-
+- 检查是否有未完成任务被中断，如有，先提醒用户
 ### 第二步：意图理解（内部思考）
 ### 第三步：目标定义（内部思考）
 ### 第四步：搜索 Skill 文件
 - 有匹配 → 严格按 Skill 执行
 - 无匹配 → 继续第五步
-
 ### 第五步：任务分解
 📋 执行计划：确认后执行。
-
 ### 第六步：自主执行
-- 逐步执行，错误自动修复
-- 临时脚本执行完必须删除
-
+- 逐步执行，错误自动修复，临时脚本执行完必须删除
 ### 第七步：闭环验证
 - 自检目标是否达成
 `);
@@ -424,7 +472,6 @@ export default definePluginEntry({
 以下任务尚未完成，请在回复末尾提醒用户：
 ${interruptedTasks}
 
-### 处理规则
 - 用户询问"还有什么任务"时列出
 - 用户选择继续某项时，读取进度继续执行
 - 任务完成后用 manage_interrupted_task 标记完成
@@ -436,7 +483,7 @@ ${interruptedTasks}
                     s.cachedSkillCount = s.skillGenerator.listGenerated().length;
                     s.skillCountCacheTime = Date.now();
                 }
-                parts.push(`> ⚠️ 禁止读取 MEMORY.md`, `> 📂 对话记忆: ${s.basePath}/chat_logs/`, `> 📊 ${stats.total} 条偏好 | ${s.cachedSkillCount} 个技能`, `> ⚠️ 技能库路径: ${s.skillsPath}`, `> 🌐 管理账户/升级套餐: ${CONFIG.CLOUD_URL.replace(':3000', '')}/setup.html`);
+                parts.push(`> ⚠️ 禁止读取 MEMORY.md`, `> 📂 对话记忆: ${s.basePath}/chat_logs/`, `> 📊 ${stats.total} 条偏好 | ${s.cachedSkillCount} 个技能`, `> ⚠️ 技能库路径: ${s.skillsPath}`, `> 🌐 账户管理: ${CONFIG.CLOUD_URL.replace(':3000', '')}/setup.html （登录/注册/升级套餐）`);
                 return { systemPrompt: parts.join("\n") };
             }
             catch {
@@ -547,19 +594,7 @@ ${interruptedTasks}
             const firstUserMsg = messages.find((m) => m.role === 'user');
             const taskDescription = firstUserMsg ? (typeof firstUserMsg.content === 'string' ? firstUserMsg.content.substring(0, 200) : extractText(firstUserMsg).substring(0, 200)) : '';
             return {
-                compactionPrompt: `## 📊 任务执行进度摘要
-
-### 原始任务
-${taskDescription}
-
-### 已完成步骤
-${progressLines.length > 0 ? progressLines.join('\n') : '（正在进行中）'}
-
-### 当前状态
-- 请根据以上进度摘要继续执行任务
-- 记住已完成的部分，不要重复执行
-- 继续未完成的步骤，直到任务闭环
-`
+                compactionPrompt: `## 📊 任务执行进度摘要\n\n### 原始任务\n${taskDescription}\n\n### 已完成步骤\n${progressLines.length > 0 ? progressLines.join('\n') : '（正在进行中）'}\n\n### 当前状态\n- 请根据以上进度摘要继续执行任务\n- 记住已完成的部分，不要重复执行\n- 继续未完成的步骤，直到任务闭环\n`
             };
         });
         console.log("[Self-Growth] ✅ 注册完成");

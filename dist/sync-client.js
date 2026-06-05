@@ -9,20 +9,12 @@ export class SyncClient {
     }
     async start(basePath) {
         const activation = await loadActivation(basePath);
-        const plan = activation.plan;
-        const intervals = {
-            free: 0,
-            pro: 10 * 60 * 1000,
-            enterprise: 0,
-        };
-        const interval = intervals[plan];
-        if (interval > 0) {
-            this.timer = setInterval(() => this.sync(basePath), interval);
-            console.log(`[SyncClient] 自动同步已启动 (间隔: ${interval / 1000}s)`);
-        }
-        else if (plan === 'free') {
+        if (activation.plan === 'free') {
             console.log('[SyncClient] 免费版，手动同步模式');
+            return;
         }
+        this.timer = setInterval(() => this.sync(basePath), this.config.interval);
+        console.log(`[SyncClient] 自动同步已启动 (间隔: ${this.config.interval / 1000}s)`);
     }
     stop() {
         if (this.timer) {
@@ -32,19 +24,29 @@ export class SyncClient {
     }
     async sync(basePath) {
         const activation = await loadActivation(basePath);
-        if (!activation.license)
+        if (activation.plan === 'free')
             return;
         const dirs = ['memory', 'chat_logs', 'skills'];
         for (const dir of dirs) {
-            await this.syncDirectory(basePath, dir, activation.license);
+            await this.syncDirectory(basePath, dir);
         }
     }
-    async syncDirectory(basePath, dirName, license) {
+    async syncDirectory(basePath, dirName) {
+        const activation = await loadActivation(basePath);
+        const email = activation?.email || '';
+        if (!email)
+            return;
         const localDir = path.join(basePath, dirName);
         let files = [];
         try {
             const entries = await fs.readdir(localDir, { withFileTypes: true, recursive: true });
-            files = entries.filter(e => e.isFile()).map(e => path.join(dirName, e.name).replace(/\\/g, '/'));
+            files = entries
+                .filter(e => e.isFile())
+                .map(e => {
+                const fullPath = path.join(e.parentPath || e.path || localDir, e.name);
+                const relativePath = path.relative(basePath, fullPath);
+                return relativePath.replace(/\\/g, '/');
+            });
         }
         catch {
             return;
@@ -54,13 +56,11 @@ export class SyncClient {
                 const content = await fs.readFile(path.join(basePath, file));
                 await fetch(`${this.config.serverUrl}/api/sync/upload`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${license}`,
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filePath: file,
                         content: content.toString('base64'),
+                        email: email,
                     }),
                 });
             }
@@ -71,16 +71,17 @@ export class SyncClient {
     }
     async restore(basePath, targetDir) {
         const activation = await loadActivation(basePath);
-        if (!activation.license)
+        if (activation.plan === 'free')
             return;
-        const res = await fetch(`${this.config.serverUrl}/api/sync/files`, {
-            headers: { 'Authorization': `Bearer ${activation.license}` },
-        });
+        const email = activation?.email || '';
+        if (!email)
+            return;
+        const res = await fetch(`${this.config.serverUrl}/api/sync/files?email=${encodeURIComponent(email)}`);
         const files = await res.json();
         for (const file of files) {
             if (!file.path.startsWith(targetDir))
                 continue;
-            const downloadRes = await fetch(`${this.config.serverUrl}/api/sync/download/${encodeURIComponent(file.path)}`, { headers: { 'Authorization': `Bearer ${activation.license}` } });
+            const downloadRes = await fetch(`${this.config.serverUrl}/api/sync/download/${encodeURIComponent(file.path)}?email=${encodeURIComponent(email)}`);
             const data = await downloadRes.json();
             if (data.content) {
                 const localPath = path.join(basePath, file.path);
