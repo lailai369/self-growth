@@ -1,5 +1,5 @@
 {
-  "id": "self-growth",
+  "id": "@yulailai/openclaw-plugin-self-growth",
   "name": "Self Growth Engine",
   "version": "3.0.0",
   "description": "让 Agent 具备自我成长、复盘与技能进化能力的插件。支持对话日志、偏好提取与注入、双引擎反思、技能自动生成与生命周期管理、每日复盘、技能评分与自动清理。",
