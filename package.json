@@ -54,7 +54,13 @@
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2",
       "minGatewayVersion": ">=2026.3.24-beta.2"
-    }
+    },
+    "hooks": [
+      "session_start",
+      "before_prompt_build",
+      "agent_end",
+      "before_compaction"
+    ]
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.24-beta.2"
