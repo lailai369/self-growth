@@ -12,6 +12,7 @@ import * as path from 'path';
 import { loadActivation, saveActivation } from './payment';
 import { loginAndGetToken } from './auth-client';
 import { SyncClient } from './sync-client';
+import { homedir } from 'os';
 const CONFIG = {
     LLM_BASE_URL: 'http://127.0.0.1:18789/v1',
     CLOUD_URL: 'http://yulailai.com',
@@ -58,7 +59,14 @@ let _lastReflectionTime = 0;
 let _state = null;
 let _initPromise = null;
 function getBasePath() {
-    return path.resolve(__dirname, '..');
+    // 优先环境变量，否则用 ~/openclaw/extensions/self-growth
+    const openclawHome = process.env.OPENCLAW_HOME || path.join(homedir(), 'openclaw');
+    const extPath = path.join(openclawHome, 'extensions', 'self-growth');
+    try {
+        mkdirSync(extPath, { recursive: true });
+    }
+    catch { }
+    return extPath;
 }
 function getSkillsPath() {
     const p = path.join(getBasePath(), 'skills');
