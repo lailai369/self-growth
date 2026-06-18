@@ -1,6 +1,6 @@
 {
   "name": "@yulailai/openclaw-plugin-self-growth",
-  "version": "3.1.7",
+  "version": "3.1.8",
   "description": "让 Agent 具备自我成长、复盘与技能进化能力的插件",
   "type": "module",
   "main": "dist/index.js",
@@ -31,7 +31,7 @@
     }
   },
   "scripts": {
-    "postinstall": "node -e \"const{execSync}=require('child_process');const p=require('path');const os=require('os');const f=require('fs');const home=process.env.OPENCLAW_HOME||p.join(os.homedir(),'openclaw');const dest=p.join(home,'extensions','self-growth');f.cpSync(process.cwd(),dest,{recursive:true,filter:(src)=>/node_modules/.test(src)===false});console.log('self-growth installed to',dest)\"",
+    "postinstall": "node -e \"const f=require('fs');const p=require('path');const os=require('os');const src=p.resolve(__dirname);const home=process.env.OPENCLAW_HOME||p.join(os.homedir(),'openclaw');const dest=p.join(home,'extensions','self-growth');f.cpSync(src,dest,{recursive:true,filter:(s)=>/node_modules/.test(s)===false});const cfgPath=p.join(home,'openclaw.json');if(f.existsSync(cfgPath)){const cfg=JSON.parse(f.readFileSync(cfgPath,'utf-8'));cfg.plugins=cfg.plugins||{};cfg.plugins.entries=cfg.plugins.entries||{};cfg.plugins.entries['self-growth']={enabled:true};cfg.plugins.allow=cfg.plugins.allow||[];if(!cfg.plugins.allow.includes('self-growth')){cfg.plugins.allow.push('self-growth')}f.writeFileSync(cfgPath,JSON.stringify(cfg,null,2));console.log('self-growth added to openclaw.json')}console.log('installed to',dest)\"",
     "build": "tsc",
     "build:prod": "tsc && npx terser dist/index.js -o dist/index.js -c -m",
     "dev": "tsc --watch",
