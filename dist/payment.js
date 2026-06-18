@@ -8,10 +8,15 @@ export async function loadActivation(basePath) {
     const filePath = getActivationPath(basePath);
     try {
         const data = await fs.readFile(filePath, 'utf-8');
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (!parsed.deviceId) {
+            parsed.deviceId = generateDeviceId();
+            await fs.writeFile(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
+        }
+        return parsed;
     }
     catch {
-        return {
+        const state = {
             plan: 'free',
             license: null,
             activatedAt: null,
@@ -19,10 +24,14 @@ export async function loadActivation(basePath) {
             deviceId: generateDeviceId(),
             email: null,
         };
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf-8');
+        return state;
     }
 }
 export async function saveActivation(basePath, state) {
     const filePath = getActivationPath(basePath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf-8');
 }
 export async function activateLicense(basePath, license, serverUrl) {
@@ -31,9 +40,8 @@ export async function activateLicense(basePath, license, serverUrl) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ license }),
     });
-    if (!res.ok) {
+    if (!res.ok)
         throw new Error('许可证无效或已过期');
-    }
     const data = await res.json();
     const state = {
         plan: data.plan,
@@ -56,9 +64,8 @@ export async function createPaymentOrder(plan, serverUrl) {
         },
         body: JSON.stringify({ plan }),
     });
-    if (!res.ok) {
+    if (!res.ok)
         throw new Error('创建订单失败');
-    }
     return res.json();
 }
 export async function checkPaymentStatus(orderId, serverUrl) {
@@ -66,9 +73,8 @@ export async function checkPaymentStatus(orderId, serverUrl) {
     const res = await fetch(`${serverUrl}/api/payment/order/${orderId}`, {
         headers: { 'Authorization': `Bearer ${state.license}` },
     });
-    if (!res.ok) {
+    if (!res.ok)
         return 'unknown';
-    }
     const data = await res.json();
     return data.status;
 }

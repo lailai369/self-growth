@@ -9,11 +9,12 @@ import { MemoryManager } from "./memory-manager";
 import * as fs from 'fs/promises';
 import { readFileSync, mkdirSync } from 'fs';
 import * as path from 'path';
-import { loadActivation } from './payment';
+import { loadActivation, saveActivation } from './payment';
+import { loginAndGetToken } from './auth-client';
 import { SyncClient } from './sync-client';
 const CONFIG = {
     LLM_BASE_URL: 'http://127.0.0.1:18789/v1',
-    CLOUD_URL: 'http://115.28.208.50:3000',
+    CLOUD_URL: 'http://yulailai.com',
     LLM_TIMEOUT_MS: 10000,
     SKILL_COUNT_CACHE_TTL_MS: 30000,
     CURRENT_VERSION: '3.0.0',
@@ -69,7 +70,7 @@ function getSkillsPath() {
 }
 async function checkForUpdates(basePath) {
     const sources = [
-        `http://115.28.208.50/version.json`,
+        `https://yulailai.com/version.json`,
         `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/releases/latest`,
     ];
     for (const url of sources) {
@@ -88,22 +89,108 @@ async function checkForUpdates(basePath) {
 }
 async function syncMemoryFromCloud(basePath, email) {
     try {
-        const res = await fetch(`${CONFIG.CLOUD_URL}/api/sync/memory?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok)
+        const auth = await loginAndGetToken(CONFIG.CLOUD_URL, email, basePath);
+        if (!auth)
             return;
-        const data = await res.json();
-        const compiledDir = path.join(basePath, 'memory', 'compiled');
-        await fs.mkdir(compiledDir, { recursive: true });
-        if (data?.memory)
-            await fs.writeFile(path.join(compiledDir, 'memory.md'), data.memory, 'utf-8');
-        if (data?.preferences)
-            await fs.writeFile(path.join(compiledDir, 'preferences.md'), data.preferences, 'utf-8');
-        if (data?.lessons)
-            await fs.writeFile(path.join(compiledDir, 'lessons.md'), data.lessons, 'utf-8');
-        if (data?.longTermGoals)
-            await fs.writeFile(path.join(basePath, 'memory', 'long_term_goals.md'), data.longTermGoals, 'utf-8');
+        // 从云端恢复偏好数据
+        const types = ['preference', 'habit', 'fact', 'decision', 'lesson', 'skill'];
+        const allItems = [];
+        for (const type of types) {
+            try {
+                const res = await fetch(`${CONFIG.CLOUD_URL}/api/sync/pull?type=${type}`, {
+                    headers: { 'Authorization': `Bearer ${auth.token}` },
+                    signal: AbortSignal.timeout(10000),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.items) {
+                        allItems.push(...data.items);
+                    }
+                }
+            }
+            catch { }
+        }
+        if (allItems.length > 0) {
+            const typeLabels = {
+                preference: '偏好', habit: '习惯', fact: '事实',
+                decision: '决定', lesson: '教训', skill: '技能',
+            };
+            const groups = {};
+            for (const item of allItems) {
+                const t = item.type || 'preference';
+                if (!groups[t])
+                    groups[t] = [];
+                groups[t].push(item);
+            }
+            let markdown = `# 用户偏好\n\n> 自动同步于 ${new Date().toISOString()}\n\n`;
+            for (const [type, items] of Object.entries(groups)) {
+                markdown += `## ${typeLabels[type] || type}\n\n`;
+                for (const item of items) {
+                    let text = '';
+                    try {
+                        text = JSON.parse(item.content || '{}').text || item.content || '';
+                    }
+                    catch {
+                        text = item.content || '';
+                    }
+                    const stars = '★'.repeat(item.confidence || 1);
+                    markdown += `- [${stars}] ${text}\n`;
+                }
+                markdown += '\n';
+            }
+            const prefsPath = path.join(basePath, 'memory', 'user_preferences.md');
+            await fs.mkdir(path.dirname(prefsPath), { recursive: true });
+            await fs.writeFile(prefsPath, markdown);
+        }
     }
     catch { }
+}
+async function pollForActivation(basePath, deviceId, oldEmail) {
+    for (let i = 0; i < 30; i++) {
+        try {
+            const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/poll?deviceId=${encodeURIComponent(deviceId)}`, { signal: AbortSignal.timeout(3000) });
+            const data = await res.json();
+            if (data.ready) {
+                if (oldEmail && oldEmail !== data.email) {
+                    console.log('[Self-Growth] 🧹 检测到账号切换，清空本地数据...');
+                    const dirs = ['memory', 'chat_logs'];
+                    for (const dir of dirs) {
+                        try {
+                            const dirPath = path.join(basePath, dir);
+                            const entries = await fs.readdir(dirPath, { withFileTypes: true, recursive: true });
+                            for (const entry of entries) {
+                                if (entry.isFile())
+                                    await fs.unlink(path.join(dirPath, entry.name)).catch(() => { });
+                            }
+                        }
+                        catch { }
+                    }
+                    try {
+                        const skillsDir = path.join(basePath, 'skills');
+                        const skillEntries = await fs.readdir(skillsDir, { withFileTypes: true });
+                        for (const entry of skillEntries) {
+                            if (entry.isDirectory())
+                                await fs.rm(path.join(skillsDir, entry.name), { recursive: true }).catch(() => { });
+                        }
+                    }
+                    catch { }
+                }
+                await saveActivation(basePath, {
+                    plan: data.plan || 'free',
+                    license: data.token || '',
+                    activatedAt: new Date().toISOString(),
+                    expiresAt: null,
+                    deviceId: data.deviceId || deviceId,
+                    email: data.email || '',
+                });
+                console.log('[Self-Growth] ✅ 激活成功，payment.json 已自动生成');
+                return true;
+            }
+        }
+        catch { }
+        await new Promise(r => setTimeout(r, 3000));
+    }
+    return false;
 }
 async function ensureInit() {
     if (_state)
@@ -131,27 +218,47 @@ async function ensureInit() {
             let isPro = false;
             let email = '';
             let expiresAt = '';
+            let deviceId = '';
+            let token = '';
             try {
                 const activation = await loadActivation(basePath);
+                token = activation?.license || '';
+                deviceId = activation?.deviceId || '';
                 email = activation?.email || '';
-                if (email) {
-                    const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(5000) });
+            }
+            catch { }
+            if (!token && deviceId) {
+                console.log('[Self-Growth] ⏳ 等待网页登录激活...');
+                const activated = await pollForActivation(basePath, deviceId, email);
+                if (activated) {
+                    const activation = await loadActivation(basePath);
+                    token = activation?.license || '';
+                    email = activation?.email || '';
+                }
+            }
+            if (token) {
+                try {
+                    const res = await fetch(`${CONFIG.CLOUD_URL}/api/auth/verify?deviceId=${encodeURIComponent(deviceId)}`, {
+                        signal: AbortSignal.timeout(5000),
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
                     if (res.ok) {
                         const data = await res.json();
                         isPro = data?.plan === 'pro' || data?.plan === 'enterprise';
                         expiresAt = data?.expiresAt || '';
                     }
-                    await syncMemoryFromCloud(basePath, email);
+                    if (email)
+                        await syncMemoryFromCloud(basePath, email);
                 }
+                catch { }
             }
-            catch { }
-            if (!email) {
+            if (!email && !token && deviceId) {
                 console.log("\n╔══════════════════════════════════════╗");
                 console.log("║  🌐 首次使用请注册/登录：          ║");
-                console.log("║  http://115.28.208.50/setup.html    ║");
+                console.log(`║  https://yulailai.com/setup.html?deviceId=${deviceId}  ║`);
                 console.log("╚══════════════════════════════════════╝\n");
                 try {
-                    require('child_process').exec('start http://115.28.208.50/setup.html');
+                    require('child_process').exec(`start https://yulailai.com/setup.html?deviceId=${deviceId}`);
                 }
                 catch { }
             }
@@ -162,10 +269,10 @@ async function ensureInit() {
                     console.log(`\n╔══════════════════════════════════════╗`);
                     console.log(`║  ⚠️  Pro 套餐还剩 ${daysLeft} 天到期！       ║`);
                     console.log(`║  🌐 续费链接：                      ║`);
-                    console.log(`║  http://115.28.208.50/setup.html    ║`);
+                    console.log(`║  https://yulailai.com/setup.html    ║`);
                     console.log(`╚══════════════════════════════════════╝\n`);
                     try {
-                        require('child_process').exec('start http://115.28.208.50/setup.html');
+                        require('child_process').exec('start https://yulailai.com/setup.html');
                     }
                     catch { }
                 }
@@ -186,7 +293,7 @@ async function ensureInit() {
             _state = {
                 chatLogger, taskTracker, skillGenerator, skillOptimizer,
                 dailyReviewer, memoryManager, basePath, skillsPath,
-                personality, cachedSkillCount: 0, skillCountCacheTime: 0,
+                personality, deviceId, cachedSkillCount: 0, skillCountCacheTime: 0,
                 isPro,
             };
             console.log(`[Self-Growth] ✅ 初始化完成 (${isPro ? 'Pro' : 'Free'})`);
@@ -355,7 +462,7 @@ export default definePluginEntry({
             async execute(_runId, params) {
                 await ensureInit();
                 if (!_state.isPro) {
-                    return { details: {}, content: [{ type: "text", text: "🔒 每日复盘是 Pro 功能，请升级套餐。访问 http://115.28.208.50/setup.html" }] };
+                    return { details: {}, content: [{ type: "text", text: "🔒 每日复盘是 Pro 功能，请升级套餐。访问 https://yulailai.com/setup.html" }] };
                 }
                 const p = params;
                 const result = await _state.dailyReviewer.runDailyReview();
@@ -414,6 +521,15 @@ export default definePluginEntry({
                 const s = _state;
                 const userMessage = event.messages?.[event.messages.length - 1]?.content || "";
                 const contextText = typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage);
+                // 检测"登录"关键词，自动弹网页
+                if (/登录\s*self.growth|登录账号|登陆/.test(contextText)) {
+                    const url = `https://yulailai.com/setup.html?deviceId=${s.deviceId}`;
+                    try {
+                        require('child_process').exec(`start ${url}`);
+                    }
+                    catch { }
+                    return { systemPrompt: `已在浏览器打开登录页面：${url}` };
+                }
                 let memoryBlock = '';
                 try {
                     memoryBlock = readFileSync(path.join(s.basePath, 'memory/compiled/memory.md'), 'utf-8');
@@ -562,14 +678,8 @@ ${interruptedTasks}
                         }
                     }
                 }
-                if (s.isPro && userText && agentText) {
-                    const cleanText = userText.replace(/^\[.*?\]\s*/, "");
-                    s.skillGenerator.evaluateAndGenerate({
-                        taskName: cleanText.replace(/[\\/:*?"<>|\n\r]/g, '').substring(0, 20) || "未命名任务",
-                        steps: [cleanText.substring(0, 50), agentText.substring(0, 50)],
-                        category: "自动生成", toolCallCount: 0, turnCount: event.turns || 0,
-                    });
-                }
+                // 旧的技能自动生成已删除，改为每日复盘阶段三 LLM 判断
+                // skillGenerator.evaluateAndGenerate 不再在 agent_end 中调用
                 s.skillOptimizer.evaluateAndCleanup().catch(() => { });
             }
             catch (err) {
