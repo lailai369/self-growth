@@ -1,6 +1,6 @@
 {
   "name": "openclaw-plugin-self-growth",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "让 Agent 具备自我成长、复盘与技能进化能力的插件",
   "type": "module",
   "main": "dist/index.js",
@@ -39,6 +39,10 @@
   },
   "files": [
     "dist",
+    "session_start",
+    "before_prompt_build",
+    "agent_end",
+    "before_compaction",
     "openclaw.plugin.json",
     "PERSONALITY.md",
     "README.md",
