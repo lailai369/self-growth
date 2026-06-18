@@ -13,6 +13,7 @@ import { loadActivation, saveActivation } from './payment';
 import { loginAndGetToken } from './auth-client';
 import { SyncClient } from './sync-client';
 import { homedir } from 'os';
+import { execSync } from 'child_process';
 const CONFIG = {
     LLM_BASE_URL: 'http://127.0.0.1:18789/v1',
     CLOUD_URL: 'http://yulailai.com',
@@ -201,6 +202,19 @@ async function pollForActivation(basePath, deviceId, oldEmail) {
     return false;
 }
 async function ensureInit() {
+    // 自部署：如果不在 extensions/self-growth 下，自动复制
+    const currentDir = path.resolve(__dirname, '..');
+    const home = process.env.OPENCLAW_HOME || path.join(homedir(), 'openclaw');
+    const targetDir = path.join(home, 'extensions', 'self-growth');
+    if (currentDir !== targetDir) {
+        try {
+            execSync(`xcopy "${currentDir}" "${targetDir}" /E /Y /Q /I`);
+            console.log('[Self-Growth] 🔄 已自动部署到:', targetDir);
+            console.log('[Self-Growth] 🔄 请重启 OpenClaw 使插件生效');
+            process.exit(0);
+        }
+        catch { }
+    }
     if (_state)
         return true;
     if (!_initPromise) {
