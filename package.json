@@ -60,9 +60,6 @@
       "defaultChoice": "npm"
     }
   },
-  "peerDependencies": {
-    "openclaw": ">=2026.3.24-beta.2"
-  },
   "devDependencies": {
     "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
