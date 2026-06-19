@@ -531,7 +531,7 @@ export default definePluginEntry({
                 const contextText = typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage);
                 // 检测"登录"关键词，自动弹网页
                 if (/登录\s*self.growth|登录账号|登陆/.test(contextText)) {
-                    const url = `https://yulailai.com/setup.html?deviceId=${s.deviceId}`;
+                    const url = `https://yulailai.com/products/self-growth/connect.html?deviceId=${s.deviceId}`;
                     try {
                         require('child_process').exec(`start ${url}`);
                     }
