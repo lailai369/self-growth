@@ -263,10 +263,10 @@ async function ensureInit() {
             if (!email && !token && deviceId) {
                 console.log("\n╔══════════════════════════════════════╗");
                 console.log("║  🌐 首次使用请注册/登录：          ║");
-                console.log(`║  https://yulailai.com/setup.html?deviceId=${deviceId}  ║`);
+                console.log(`║  https://yulailai.com/products/self-growth/connect.html?deviceId=${deviceId}  ║`);
                 console.log("╚══════════════════════════════════════╝\n");
                 try {
-                    require('child_process').exec(`start https://yulailai.com/setup.html?deviceId=${deviceId}`);
+                    require('child_process').exec(`start https://yulailai.com/products/self-growth/connect.html?deviceId=${deviceId}`);
                 }
                 catch { }
             }
