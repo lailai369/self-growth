@@ -1,6 +1,7 @@
 // 认证客户端 - 获取和刷新 JWT token
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { loadActivation } from './payment';
 let _cache = null;
 export function getCachedToken() {
     return _cache;
@@ -14,6 +15,31 @@ export async function loginAndGetToken(serverUrl, email, basePath) {
         if (cached.expiresAt > Date.now() + 86400000) {
             _cache = cached;
             return cached;
+        }
+    }
+    catch { }
+    // 用 payment.json 里的 token 验证
+    try {
+        const activation = await loadActivation(basePath);
+        const token = activation?.license;
+        if (token) {
+            const res = await fetch(`${serverUrl}/api/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+                signal: AbortSignal.timeout(5000),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const tokenCache = {
+                    token,
+                    userId: data.user.id,
+                    email: data.user.email,
+                    plan: data.user.plan,
+                    expiresAt: Date.now() + 6 * 86400000,
+                };
+                _cache = tokenCache;
+                await fs.writeFile(cacheFile, JSON.stringify(tokenCache));
+                return tokenCache;
+            }
         }
     }
     catch { }
