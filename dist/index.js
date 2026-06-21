@@ -15,7 +15,7 @@ import { SyncClient } from './sync-client';
 import { homedir } from 'os';
 const CONFIG = {
     LLM_BASE_URL: 'http://127.0.0.1:18789/v1',
-    CLOUD_URL: 'http://yulailai.com',
+    CLOUD_URL: 'https://yulailai.com',
     LLM_TIMEOUT_MS: 10000,
     SKILL_COUNT_CACHE_TTL_MS: 30000,
     CURRENT_VERSION: '3.0.0',
