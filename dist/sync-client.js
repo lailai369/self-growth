@@ -82,29 +82,46 @@ export class SyncClient {
         }
     }
     async syncFiles(basePath, token) {
-        // 同步编译后的记忆文件到 memory API
         try {
+            // 1. 同步人格文件 memory.md
             const compiledDir = path.join(basePath, 'memory', 'compiled');
-            const files = ['memory.md', 'preferences.md', 'lessons.md'];
-            for (const file of files) {
-                const content = await fs.readFile(path.join(compiledDir, file), 'utf-8').catch(() => '');
-                if (!content.trim())
-                    continue;
-                const type = file.replace('.md', '') === 'memory' ? 'preference' : file.replace('.md', '');
-                await fetch(`${this.config.serverUrl}/api/memory/${type}`, {
+            const memoryContent = await fs.readFile(path.join(compiledDir, 'memory.md'), 'utf-8').catch(() => '');
+            if (memoryContent) {
+                await fetch(`${this.config.serverUrl}/api/sync/push`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`,
                     },
-                    body: JSON.stringify({ content, confidence: 3 }),
+                    body: JSON.stringify({
+                        type: 'compiled_memory',
+                        items: [{ content: memoryContent, file_path: 'memory.md' }],
+                    }),
                     signal: AbortSignal.timeout(15000),
                 });
             }
-            console.log('[SyncClient] 记忆文件同步完成');
+            // 2. 同步 chat_logs（今天的）
+            const today = new Date().toISOString().split('T')[0];
+            const chatLogPath = path.join(basePath, 'chat_logs', `${today}.md`);
+            const chatContent = await fs.readFile(chatLogPath, 'utf-8').catch(() => '');
+            if (chatContent) {
+                await fetch(`${this.config.serverUrl}/api/sync/push`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        type: 'chat_logs',
+                        items: [{ content: chatContent, file_path: `${today}.md` }],
+                    }),
+                    signal: AbortSignal.timeout(15000),
+                });
+            }
+            console.log('[SyncClient] 同步文件完成');
         }
         catch (err) {
-            console.error('[SyncClient] 文件同步失败:', err);
+            console.error('[SyncClient] 同步文件失败:', err);
         }
     }
     parsePreferences(markdown) {
